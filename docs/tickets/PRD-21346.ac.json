@@ -1,0 +1,132 @@
+[
+  {
+    "id": "TC1",
+    "ac": "AC1",
+    "text": "Given the connector is running, When a client sends tools/list with valid credential headers, Then the response includes exactly the 10 spaces_* tools named in the tech design's Data & API contract table, each with a first-line description <= 100 chars and full description <= 500 chars",
+    "type": "auto",
+    "tests": ["tests/test_tools.py::test_tools_list_has_all_spaces_tools_with_valid_descriptions"]
+  },
+  {
+    "id": "TC2",
+    "ac": "AC2",
+    "text": "Given a tools/call request missing one or more of X-DigitalOcean-Spaces-Access-Key, X-DigitalOcean-Spaces-Secret-Key, X-DigitalOcean-Spaces-Region, When any Spaces tool is invoked, Then the response is HTTP 401 listing exactly which header(s) are missing, and no call reaches DigitalOcean",
+    "type": "auto",
+    "tests": ["tests/test_middleware.py::test_missing_credential_headers_returns_401_listing_missing_names"]
+  },
+  {
+    "id": "TC3",
+    "ac": "AC3",
+    "text": "Given valid credentials and a mocked S3 ListBuckets response with 3 buckets, When spaces_list_buckets is called, Then it returns the 3 buckets with name/region/created fields and the tool is annotated readOnlyHint: true",
+    "type": "auto",
+    "tests": ["tests/test_tools.py::test_list_buckets_returns_all_buckets"]
+  },
+  {
+    "id": "TC4",
+    "ac": "AC4",
+    "text": "Given valid credentials and a bucket name/region, When spaces_create_bucket is called, Then the bucket is created and its name/region are returned; Given a mocked BucketAlreadyExists error, Then the response is a structured non-500 error distinguishable from a generic failure",
+    "type": "auto",
+    "tests": [
+      "tests/test_tools.py::test_create_bucket_happy_path",
+      "tests/test_tools.py::test_create_bucket_duplicate_name_returns_structured_error"
+    ]
+  },
+  {
+    "id": "TC5",
+    "ac": "AC5",
+    "text": "Given an empty bucket, When spaces_delete_bucket is called, Then the bucket is deleted; Given a mocked BucketNotEmpty error, Then the response is a structured invalid_argument error naming the bucket and instructing the agent to empty it first, not a bare 500",
+    "type": "auto",
+    "tests": [
+      "tests/test_tools.py::test_delete_bucket_happy_path",
+      "tests/test_tools.py::test_delete_bucket_not_empty_returns_structured_error"
+    ]
+  },
+  {
+    "id": "TC6",
+    "ac": "AC6",
+    "text": "Given a bucket with more objects than one page, When spaces_list_objects is called with a limit and then with the returned continuation_token, Then the second call returns the next page with no key repeated across both pages; Given a prefix, Then only matching keys are returned",
+    "type": "auto",
+    "tests": [
+      "tests/test_tools.py::test_list_objects_pagination_no_duplicate_keys",
+      "tests/test_tools.py::test_list_objects_prefix_filters_keys"
+    ]
+  },
+  {
+    "id": "TC7",
+    "ac": "AC7",
+    "text": "Given an object under the size cap with a text content type, When spaces_get_object is called, Then it returns the object content as text; Given an object over the cap, Then it returns metadata only (size, content_type) plus a note to use spaces_create_presigned_url, with content: null",
+    "type": "auto",
+    "tests": [
+      "tests/test_tools.py::test_get_object_returns_inline_content_under_cap",
+      "tests/test_tools.py::test_get_object_over_cap_returns_metadata_only"
+    ]
+  },
+  {
+    "id": "TC8",
+    "ac": "AC8",
+    "text": "Given a payload under the size cap, When spaces_put_object is called, Then the object is written and is immediately visible to spaces_get_object_metadata; Given a payload over the cap, Then the request is rejected with invalid_argument before any call reaches DigitalOcean",
+    "type": "auto",
+    "tests": [
+      "tests/test_tools.py::test_put_object_happy_path_then_visible_in_metadata",
+      "tests/test_tools.py::test_put_object_oversized_payload_rejected_before_upstream_call"
+    ]
+  },
+  {
+    "id": "TC9",
+    "ac": "AC9",
+    "text": "Given a list of keys where some exist and one does not, When spaces_delete_objects is called, Then all existing keys are deleted in one call and the response reports per-key success/failure without failing the whole batch",
+    "type": "auto",
+    "tests": ["tests/test_tools.py::test_delete_objects_batch_reports_per_key_result"]
+  },
+  {
+    "id": "TC10",
+    "ac": "AC10",
+    "text": "Given a source object and an existing destination bucket/key in the same region, When spaces_copy_object is called, Then the destination object exists with the source's content; Given a destination bucket that does not exist, Then the response is a structured not_found error",
+    "type": "auto",
+    "tests": [
+      "tests/test_tools.py::test_copy_object_happy_path",
+      "tests/test_tools.py::test_copy_object_missing_destination_bucket_returns_not_found"
+    ]
+  },
+  {
+    "id": "TC11",
+    "ac": "AC11",
+    "text": "Given an existing object, When spaces_get_object_metadata is called, Then it returns size, content_type, etag, and last_modified without transferring the object body (HeadObject only, never GetObject)",
+    "type": "auto",
+    "tests": ["tests/test_tools.py::test_get_object_metadata_uses_head_not_get"]
+  },
+  {
+    "id": "TC12",
+    "ac": "AC12",
+    "text": "Given valid credentials, When spaces_create_presigned_url is called with method get or put and an expiry, Then it returns a URL signed for that single operation valid only until the requested expiry, and the underlying HTTP client is never invoked (pure local signing, zero network calls)",
+    "type": "auto",
+    "tests": ["tests/test_client.py::test_presigned_url_generation_makes_no_network_calls"]
+  },
+  {
+    "id": "TC13",
+    "ac": "AC13",
+    "text": "Given a mocked throttling response (SlowDown/429) with a Retry-After-equivalent, When any Spaces tool makes that call, Then the client retries with backoff honoring it within the bounded retry budget; if still throttled after retries, Then the agent sees a structured rate_limited error, not a bare timeout",
+    "type": "auto",
+    "tests": ["tests/test_client.py::test_throttling_retries_with_backoff_then_rate_limited"]
+  },
+  {
+    "id": "TC14",
+    "ac": "AC14",
+    "text": "Given two concurrent tools/call requests carrying two different tenants' credential headers (different access key/secret key/region triples), When both complete, Then neither response contains data retrieved using the other request's credentials, and no boto3 client instance is shared between the two in-flight requests",
+    "type": "auto",
+    "tests": ["tests/test_middleware.py::test_concurrent_requests_with_different_credentials_do_not_cross_contaminate"]
+  },
+  {
+    "id": "TC15",
+    "ac": "AC15",
+    "text": "Given the repository's README.md, Then it documents the 3 credential headers (purpose, where to obtain an access key/secret key pair, what region means), lists all 10 Spaces tools, and its MSPbots Connector section is byte-for-byte identical to the skill's reference/readme-connector-section.md",
+    "type": "manual",
+    "steps": [
+      "Open README.md on the reviewed commit",
+      "Diff the 'MSPbots Connector' section against ~/.claude/skills/vendor-mcp-development/reference/readme-connector-section.md",
+      "Check the credential-header table lists all 3 headers with purpose and how to obtain them",
+      "Check the tool table lists all 10 spaces_* tools"
+    ],
+    "expect": "Connector section diffs clean (no changes); header table has 3 rows with purpose/how-to-obtain filled in; tool table has 10 rows matching the Data & API contract table",
+    "result": "untested"
+  }
+]
