@@ -33,13 +33,22 @@ def endpoint_for(region: str) -> str:
     return f"https://{region}.digitaloceanspaces.com"
 
 
-def build_s3_client(creds: SpacesCredentials):
+def build_s3_client(creds: SpacesCredentials, region: str | None = None):
     """A fresh S3 client for this one call.
+
+    A DigitalOcean Spaces access/secret key pair is valid across every Spaces
+    region for the account (it is not region-bound), so most tools accept a
+    per-call `region` argument and that argument — not the credential
+    header's region — decides which regional endpoint this call hits
+    (PRD-21346 review round 1). `region` is only `None` for tools that have
+    no region argument of their own (`spaces_list_buckets`), in which case
+    the credential header's region is the only one available.
 
     botocore's own retry machinery is disabled (max_attempts=1): retry/backoff
     is owned by call_with_retry below, which is the only place that can see
     and honor a Retry-After header.
     """
+    effective_region = region if region is not None else creds.region
     config = Config(
         connect_timeout=settings.connect_timeout_seconds,
         read_timeout=settings.read_timeout_seconds,
@@ -52,8 +61,8 @@ def build_s3_client(creds: SpacesCredentials):
     )
     return boto3.client(
         "s3",
-        endpoint_url=endpoint_for(creds.region),
-        region_name=creds.region,
+        endpoint_url=endpoint_for(effective_region),
+        region_name=effective_region,
         aws_access_key_id=creds.access_key,
         aws_secret_access_key=creds.secret_key,
         config=config,
@@ -144,9 +153,10 @@ def generate_presigned_url(
     key: str,
     expires_in_seconds: int,
     content_type: str | None = None,
+    region: str | None = None,
 ) -> str:
     """Pure local SigV4 signing — makes zero network calls (AC12)."""
-    client = build_s3_client(creds)
+    client = build_s3_client(creds, region)
     if method == "get":
         return client.generate_presigned_url(
             "get_object",

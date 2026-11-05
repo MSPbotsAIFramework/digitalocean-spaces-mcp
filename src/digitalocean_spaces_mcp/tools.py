@@ -87,7 +87,7 @@ def register(mcp) -> None:
     ) -> str:
         async def run() -> str:
             creds = _require_credentials()
-            client = build_s3_client(creds)
+            client = build_s3_client(creds, region)
             await call_with_retry(client.create_bucket, Bucket=name, ACL=acl, bucket_name=name)
             return dumps({"name": name, "region": region})
 
@@ -104,7 +104,7 @@ def register(mcp) -> None:
     async def spaces_delete_bucket(name: str, region: str) -> str:
         async def run() -> str:
             creds = _require_credentials()
-            client = build_s3_client(creds)
+            client = build_s3_client(creds, region)
             await call_with_retry(client.delete_bucket, Bucket=name, bucket_name=name)
             return dumps({"deleted": True})
 
@@ -127,7 +127,7 @@ def register(mcp) -> None:
     ) -> str:
         async def run() -> str:
             creds = _require_credentials()
-            client = build_s3_client(creds)
+            client = build_s3_client(creds, region)
             kwargs: dict = {"Bucket": bucket, "MaxKeys": max(1, min(limit, 200))}
             if prefix:
                 kwargs["Prefix"] = prefix
@@ -170,7 +170,7 @@ def register(mcp) -> None:
     ) -> str:
         async def run() -> str:
             creds = _require_credentials()
-            client = build_s3_client(creds)
+            client = build_s3_client(creds, region)
             head = await call_with_retry(client.head_object, Bucket=bucket, Key=key, bucket_name=bucket)
             size = head["ContentLength"]
             content_type = head.get("ContentType", "application/octet-stream")
@@ -238,7 +238,7 @@ def register(mcp) -> None:
                     "use spaces_create_presigned_url with method 'put' for larger writes.",
                 )
 
-            client = build_s3_client(creds)
+            client = build_s3_client(creds, region)
             kwargs: dict = {"Bucket": bucket, "Key": key, "Body": body, "ACL": acl}
             if content_type:
                 kwargs["ContentType"] = content_type
@@ -262,7 +262,7 @@ def register(mcp) -> None:
             if len(keys) > 1000:
                 raise SpacesError("invalid_argument", "keys must contain at most 1000 entries per call.")
             creds = _require_credentials()
-            client = build_s3_client(creds)
+            client = build_s3_client(creds, region)
             resp = await call_with_retry(
                 client.delete_objects,
                 Bucket=bucket,
@@ -295,7 +295,7 @@ def register(mcp) -> None:
     ) -> str:
         async def run() -> str:
             creds = _require_credentials()
-            client = build_s3_client(creds)
+            client = build_s3_client(creds, region)
             kwargs: dict = {
                 "Bucket": dest_bucket,
                 "Key": dest_key,
@@ -316,7 +316,7 @@ def register(mcp) -> None:
     async def spaces_get_object_metadata(bucket: str, region: str, key: str) -> str:
         async def run() -> str:
             creds = _require_credentials()
-            client = build_s3_client(creds)
+            client = build_s3_client(creds, region)
             head = await call_with_retry(client.head_object, Bucket=bucket, Key=key, bucket_name=bucket)
             return dumps(
                 {
@@ -360,6 +360,7 @@ def register(mcp) -> None:
                     key=key,
                     expires_in_seconds=expires_in_seconds,
                     content_type=content_type,
+                    region=region,
                 )
             except Exception as exc:  # noqa: BLE001 - map_client_error only handles ClientError
                 if isinstance(exc, SpacesError):
