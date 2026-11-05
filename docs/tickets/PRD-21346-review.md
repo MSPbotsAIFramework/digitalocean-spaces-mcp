@@ -1,5 +1,7 @@
 # PRD-21346 · Code review
 
+Status: frozen @ 1423752
+
 ## Round 1 · 2026-11-05 · reviewed dev/PRD-21346 @ fb9cc5e (base 3d5b6c3)
 
 Verdict: changes requested
@@ -18,3 +20,18 @@ Verdict: changes requested
 2. **Inline cap 5x over SOP ceiling (must-fix 2)** — `src/digitalocean_spaces_mcp/settings.py`: `get_inline_max_bytes` lowered from `100_000` to `15_000`, comfortably under the SOP section 14 "single response <= 20,000 characters" ceiling, with headroom reserved for JSON-escaping overhead on worst-case content (e.g. a text object that is mostly quotes/backslashes can nearly double in size once JSON-encoded into the response envelope — a cap set exactly at 20,000 bytes could still produce an over-limit response). `tests/test_tools.py::test_get_object_over_cap_returns_metadata_only` reads the cap from `settings.get_inline_max_bytes` dynamically, so it continues to assert the correct (now 15,000-byte) boundary without needing a numeric-literal update.
 
 Re-run after both fixes: `uv sync` ok (no resolution changes); `uv run pytest -q` → **29 passed** (25 original + 4 new), 0 failed, 0 skipped. Live server smoke re-run on commit `aeb9b7c`: `GET /health` → `200 {"status":"ok"}`; `POST /mcp` with no headers → `401 not_configured` listing all 3 missing headers; `POST /mcp tools/list` with headers and no prior `initialize` → 200, all 10 `spaces_*` tool names present. Chinese-character scan (`grep -rnP '[\x{4e00}-\x{9fff}]' --exclude-dir=.git --exclude-dir=.venv --exclude-dir=docs/tickets .`) → no output (the one hit inside `docs/tickets/PRD-21346-review.md` is this file's own quoted SOP excerpt from the round-1 finding above, predates this rework, and is not code/README). README Connector section still diffs clean against the skill's template (only a pre-existing trailing-newline difference, unchanged from the original self-test). Secret scan (`gitleaks` not installed; fallback `git diff fb9cc5e HEAD -- src/ tests/ | grep -Ei '(token|secret|api[_-]?key|password|bearer)\s*[=:]'` excluding the pre-existing header-name/test-fixture matches) → no hits.
+
+## Round 2 · 2026-11-05 · reviewed dev/PRD-21346 @ 1423752 (base 3d5b6c3)
+
+Verdict: approved
+
+### Findings
+
+None. Both round-1 must-fix items were checked against commit `aeb9b7c` (`fb9cc5e...1423752`, 7 files changed: `client.py`, `settings.py`, `tools.py`, `tests/test_client.py`, `tests/test_tools.py`, `docs/tickets/PRD-21346.ac.json`, `docs/tickets/PRD-21346-review.md`):
+
+1. **Region argument** — `client.py:36` `build_s3_client(creds, region=None)` now builds `endpoint_url`/`region_name` from `effective_region = region if region is not None else creds.region`; every region-bearing tool in `tools.py` (`spaces_create_bucket:90`, `spaces_delete_bucket:107`, `spaces_list_objects:130`, `spaces_get_object:173`, `spaces_put_object:241`, `spaces_delete_objects:265`, `spaces_copy_object:298`, `spaces_get_object_metadata:319`, `spaces_create_presigned_url:363`) now passes its own `region` argument through; `spaces_list_buckets` is correctly left on `creds.region` since it has no region argument. New unit tests (`tests/test_client.py::test_build_s3_client_uses_call_level_region_not_credential_region`, `::test_build_s3_client_falls_back_to_credential_region_when_no_override`, `::test_presigned_url_honors_region_override`, `tests/test_tools.py::test_create_presigned_url_honors_call_level_region`) directly assert the override/fallback behavior with `region="ams3"` vs `creds.region="nyc3"`, and every existing happy-path test for the 9 affected tools was updated the same way — closes the gap that let the original bug pass review-round-1's fixtures (all used `region==creds.region`). Confirmed fixed.
+2. **Inline cap** — `settings.py:21` `get_inline_max_bytes` lowered `100_000 -> 15_000`, under the SOP §14 20,000-character ceiling with stated headroom for JSON-escaping overhead; `test_get_object_over_cap_returns_metadata_only` reads the cap from settings dynamically so it still asserts the real boundary. Confirmed fixed.
+
+No new issues in the delta (`fb9cc5e...1423752`): scope unchanged (same 9 tools + settings), no new dependencies, no schema/migration, no UI, no credential handling changes, no merge conflicts. `uv run pytest -q` → 29 passed, 0 failed per the Fixes section above; this review did not re-run the suite (not required per `legs/review.md` R3).
+
+Merge: `dev/PRD-21346` @ `1423752` is approved to merge into `main` (base `3d5b6c3`, no new commits on `main` since).
